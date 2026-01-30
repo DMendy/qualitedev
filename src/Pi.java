@@ -15,14 +15,11 @@ public class Pi
 {
     public static void main(String[] args) throws Exception {
 
-        int iterations = 10_000_000;
+        //faire un paragraphe explicatif de l'utilisation de la scalabilité forte
+        int iterations = 6_000_000;
         int[] workers = {1, 2, 4, 8};
-
         Master master = new Master();
         double[] times = new double[workers.length];
-
-
-        master.doRun(iterations, 4);
 
         System.out.println("=== MEASUREMENTS ===");
 
