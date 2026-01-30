@@ -13,12 +13,33 @@ import java.util.concurrent.Future;
  */
 public class Pi
 {
-    public static void main(String[] args) throws Exception
-    {
-        long total=0;
-        // 10 workers, 50000 iterations each
-        total = new Master().doRun(50000, 10);
-        System.out.println("total from Master = " + total);
+    public static void main(String[] args) throws Exception {
+
+        int iterations = 10_000_000;
+        int[] workers = {1, 2, 4, 8};
+
+        Master master = new Master();
+        double[] times = new double[workers.length];
+
+
+        master.doRun(iterations, 4);
+
+        System.out.println("=== MEASUREMENTS ===");
+
+        for (int i = 0; i < workers.length; i++) {
+            times[i] = master.doRun(iterations, workers[i]);
+            System.out.println("Workers=" + workers[i] +
+                    " | Time(ms)=" + times[i]);
+        }
+
+        double T1 = times[0];
+
+        System.out.println("\n=== SPEEDUP ===");
+        for (int i = 0; i < workers.length; i++) {
+            double speedup = T1 / times[i];
+            System.out.println("Workers=" + workers[i] +
+                    " | Speedup=" + speedup);
+        }
     }
 }
 
@@ -27,10 +48,11 @@ public class Pi
  * and aggregates the results.
  */
 class Master {
-    public long doRun(int totalCount, int numWorkers) throws InterruptedException, ExecutionException
+    public double doRun(int totalCount, int numWorkers) throws InterruptedException, ExecutionException
     {
 
         long startTime = System.currentTimeMillis();
+        long spstarttime = System.nanoTime();
 
         // Create a collection of tasks
         List<Callable<Long>> tasks = new ArrayList<Callable<Long>>();
@@ -54,18 +76,19 @@ class Master {
         double pi = 4.0 * total / totalCount / numWorkers;
 
         long stopTime = System.currentTimeMillis();
+        long spstoptime = System.nanoTime();
 
-        System.out.println("\nPi : " + pi );
-        System.out.println("Error: " + (Math.abs((pi - Math.PI)) / Math.PI) +"\n");
+        //System.out.println("\nPi : " + pi );
+        //System.out.println("Error: " + (Math.abs((pi - Math.PI)) / Math.PI) +"\n");
 
-        System.out.println("Ntot: " + totalCount*numWorkers);
-        System.out.println("Available processors: " + numWorkers);
-        System.out.println("Time Duration (ms): " + (stopTime - startTime) + "\n");
+        //System.out.println("Ntot: " + totalCount*numWorkers);
+        //System.out.println("Available processors: " + numWorkers);
+        double timeMs = (spstoptime - spstarttime) / 1_000_000.0;
 
-        System.out.println( (Math.abs((pi - Math.PI)) / Math.PI) +" "+ totalCount*numWorkers +" "+ numWorkers +" "+ (stopTime - startTime));
+        //System.out.println( (Math.abs((pi - Math.PI)) / Math.PI) +" "+ totalCount*numWorkers +" "+ numWorkers +" "+ (stopTime - startTime));
 
         exec.shutdown();
-        return total;
+        return timeMs;
     }
 }
 
