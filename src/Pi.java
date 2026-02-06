@@ -6,39 +6,82 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+
 
 /**
  * Approximates PI using the Monte Carlo method.  Demonstrates
  * use of Callables, Futures, and thread pools.
  */
-public class Pi
-{
-    public static void main(String[] args) throws Exception {
+public class Pi {
 
-        //faire un paragraphe explicatif de l'utilisation de la scalabilité forte
-        int iterations = 6_000_000;
-        int[] workers = {1, 2, 4, 8};
-        Master master = new Master();
-        double[] times = new double[workers.length];
+    private static void runStrongScalingCSV(Master master, int[] workers, int[] problemSizes) throws Exception {
+        try (PrintWriter out = new PrintWriter(new FileWriter("strong_scaling.csv"))) {
+            out.println("ntot,workers,iter_per_worker,time_ms");
 
-        System.out.println("=== MEASUREMENTS ===");
+            for (int ntot : problemSizes) {
+                System.out.println("\n=== STRONG SCALING - Ntot = " + ntot + " ===");
 
-        for (int i = 0; i < workers.length; i++) {
-            times[i] = master.doRun(iterations, workers[i]);
-            System.out.println("Workers=" + workers[i] +
-                    " | Time(ms)=" + times[i]);
-        }
+                for (int p : workers) {
+                    int iterPerWorker = ntot / p; // strong scaling
+                    double t = master.doRun(iterPerWorker, p);
 
-        double T1 = times[0];
+                    System.out.println("Workers=" + p +
+                            " | Iter/worker=" + iterPerWorker +
+                            " | Ntot=" + ((long) iterPerWorker * p) +
+                            " | Time(ms)=" + t);
 
-        System.out.println("\n=== SPEEDUP ===");
-        for (int i = 0; i < workers.length; i++) {
-            double speedup = T1 / times[i];
-            System.out.println("Workers=" + workers[i] +
-                    " | Speedup=" + speedup);
+                    out.println(ntot + "," + p + "," + iterPerWorker + "," + t);
+                }
+            }
         }
     }
-}
+
+    private static void runWeakScalingCSV(Master master, int[] workers, int iterationsPerWorker) throws Exception {
+        try (PrintWriter out = new PrintWriter(new FileWriter("weak_scaling.csv"))) {
+            out.println("iter_per_worker,workers,ntot,time_ms");
+
+            System.out.println("\n=== WEAK SCALING - Iter/worker = " + iterationsPerWorker + " ===");
+
+            for (int p : workers) {
+                double t = master.doRun(iterationsPerWorker, p);
+                long ntot = (long) iterationsPerWorker * p;
+
+                System.out.println("Workers=" + p +
+                        " | Iter/worker=" + iterationsPerWorker +
+                        " | Ntot=" + ntot +
+                        " | Time(ms)=" + t);
+
+                out.println(iterationsPerWorker + "," + p + "," + ntot + "," + t);
+            }
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+
+        Master master = new Master();
+        int[] workers = {1, 2, 4, 8};
+
+        // STRONG: 3 tailles
+        int[] strongSizes = {12_000_000, 48_000_000, 120_000_000};
+
+        // WEAK: charge par thread constante
+        int weakIterPerWorker = 6_000_000;
+
+        // (Optionnel mais conseillé) warmup simple
+        master.doRun(1_000_000, 1);
+
+        runStrongScalingCSV(master, workers, strongSizes);
+        runWeakScalingCSV(master, workers, weakIterPerWorker);
+
+        System.out.println("\nCSV générés : strong_scaling.csv et weak_scaling.csv");
+        }
+
+
+    }
+
 
 /**
  * Creates workers to run the Monte Carlo simulation
