@@ -35,8 +35,8 @@ public class WorkerSocket {
                 int inside = 0;
 
                 for (int i = 0; i < totalCount; i++) {
-                    double x = Math.random();  // entre 0 et 1
-                    double y = Math.random();  // entre 0 et 1
+                    double x = Math.random();
+                    double y = Math.random();
                     if (x * x + y * y <= 1.0) {
                         inside++;
                     }

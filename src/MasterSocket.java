@@ -1,117 +1,155 @@
 import java.io.*;
 import java.net.*;
-/** Master is a client. It makes requests to numWorkers.
- *
- */
-public class MasterSocket {
-    static int maxServer = 8;
-    static final int[] tab_port = {25545,25546,25547,25548,25549,25550,25551,25552};
-    static String[] tab_total_workers = new String[maxServer];
-    static final String ip = "127.0.0.1";
-    static BufferedReader[] reader = new BufferedReader[maxServer];
-    static PrintWriter[] writer = new PrintWriter[maxServer];
-    static Socket[] sockets = new Socket[maxServer];
+import java.util.ArrayList;
+import java.util.List;
 
+public class MasterSocket {
+
+    static final int[] tab_port = {25545,25546,25547,25548,25549,25550,25551,25552,25553};
+    static final String ip = "127.0.0.1";
+
+    static List<BufferedReader> readers = new ArrayList<>();
+    static List<PrintWriter> writers = new ArrayList<>();
+    static List<Socket> sockets = new ArrayList<>();
 
     public static void main(String[] args) throws Exception {
 
-        // MC parameters
-        int totalCount = 16000000; // total number of throws on a Worker
-        int total = 0; // total number of throws inside quarter of disk
-        double pi;
+        // 🔎 Connexion dynamique
+        for (int port : tab_port) {
+            try {
+                Socket socket = new Socket(ip, port);
 
-        int numWorkers = maxServer;
-        BufferedReader bufferRead = new BufferedReader(new InputStreamReader(System.in));
-        String s; // for bufferRead
+                BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(socket.getInputStream()));
 
-        System.out.println("#########################################");
-        System.out.println("# Computation of PI by MC method        #");
-        System.out.println("#########################################");
+                PrintWriter writer = new PrintWriter(
+                        new BufferedWriter(
+                                new OutputStreamWriter(socket.getOutputStream())), true);
 
-        System.out.println("\n How many workers for computing PI (< maxServer): ");
-        try{
-            s = bufferRead.readLine();
-            numWorkers = Integer.parseInt(s);
-            System.out.println(numWorkers);
-        }
-        catch(IOException ioE){
-            ioE.printStackTrace();
-        }
+                sockets.add(socket);
+                readers.add(reader);
+                writers.add(writer);
 
-        for (int i=0; i<numWorkers; i++){
-            System.out.println("Enter worker"+ i +" port : ");
-            try{
-                s = bufferRead.readLine();
-                System.out.println("You select " + s);
+                System.out.println("Connected to worker on port " + port);
             }
-            catch(IOException ioE){
-                ioE.printStackTrace();
+            catch (IOException e) {
+                System.out.println("No worker on port " + port);
             }
         }
 
-        //create worker's socket
-        for(int i = 0 ; i < numWorkers ; i++) {
-            sockets[i] = new Socket(ip, tab_port[i]);
-            System.out.println("SOCKET = " + sockets[i]);
+        int connectedWorkers = sockets.size();
 
-            reader[i] = new BufferedReader( new InputStreamReader(sockets[i].getInputStream()));
-            writer[i] = new PrintWriter(new BufferedWriter(new OutputStreamWriter(sockets[i].getOutputStream())),true);
+        if (connectedWorkers == 0) {
+            System.out.println("No workers available. Exiting.");
+            return;
         }
 
-        String message_to_send;
-        message_to_send = String.valueOf(totalCount);
+        System.out.println("\nTotal connected workers: " + connectedWorkers);
 
-        String message_repeat = "y";
+        // ⚙ Tous les nombres de workers possibles
+        int[] workers = generateWorkerSteps(connectedWorkers);
 
-        long stopTime, startTime;
+        int[] strongSizes = {12_000_000, 48_000_000, 120_000_000};
+        int weakIterPerWorker = 6_000_000;
 
-        while (message_repeat.equals("y")){
+        warmup(1_000_000, 1);
 
-            startTime = System.currentTimeMillis();
-            // initialize workers
-            for(int i = 0 ; i < numWorkers ; i++) {
-                writer[i].println(message_to_send);          // send a message to each worker
-            }
+        runStrongScalingCSV(workers, strongSizes);
+        runWeakScalingCSV(workers, weakIterPerWorker);
 
-            //listen to workers's message
-            for(int i = 0 ; i < numWorkers ; i++) {
-                tab_total_workers[i] = reader[i].readLine();      // read message from server
-                System.out.println("Client sent: " + tab_total_workers[i]);
-            }
-
-            // compute PI with the result of each workers
-            for(int i = 0 ; i < numWorkers ; i++) {
-                total += Integer.parseInt(tab_total_workers[i]);
-            }
-            pi = 4.0 * total / totalCount / numWorkers;
-
-            stopTime = System.currentTimeMillis();
-
-            System.out.println("\nPi : " + pi );
-            System.out.println("Error: " + (Math.abs((pi - Math.PI)) / Math.PI) +"\n");
-
-            System.out.println("Ntot: " + totalCount*numWorkers);
-            System.out.println("Available processors: " + numWorkers);
-            System.out.println("Time Duration (ms): " + (stopTime - startTime) + "\n");
-
-            System.out.println( (Math.abs((pi - Math.PI)) / Math.PI) +" "+ totalCount*numWorkers +" "+ numWorkers +" "+ (stopTime - startTime));
-
-            System.out.println("\n Repeat computation (y/N): ");
-            try{
-                message_repeat = bufferRead.readLine();
-                System.out.println(message_repeat);
-            }
-            catch(IOException ioE){
-                ioE.printStackTrace();
-            }
+        // 🔚 Fermeture propre
+        for (int i = 0; i < connectedWorkers; i++) {
+            writers.get(i).println("END");
+            readers.get(i).close();
+            writers.get(i).close();
+            sockets.get(i).close();
         }
 
-        for(int i = 0 ; i < numWorkers ; i++) {
-            System.out.println("END");     // Send ending message
-            writer[i].println("END") ;
-            reader[i].close();
-            writer[i].close();
-            sockets[i].close();
+        System.out.println("\nCSV générés : socket_strong_scaling.csv et socket_weak_scaling.csv");
+    }
+
+
+    private static int[] generateWorkerSteps(int max) {
+        int[] steps = new int[max];
+        for (int i = 0; i < max; i++) {
+            steps[i] = i + 1;
+        }
+        return steps;
+    }
+
+    private static void warmup(int iterations, int workers) throws Exception {
+        for (int i = 0; i < workers; i++)
+            writers.get(i).println(iterations);
+
+        for (int i = 0; i < workers; i++)
+            readers.get(i).readLine();
+    }
+
+    private static void runStrongScalingCSV(int[] workers, int[] problemSizes) throws Exception {
+        try (PrintWriter out = new PrintWriter(new FileWriter("socket_strong_scaling.csv"))) {
+            out.println("ntot,workers,time_ms,pi");
+
+            for (int ntot : problemSizes) {
+                System.out.println("\n=== STRONG Ntot = " + ntot + " ===");
+
+                for (int p : workers) {
+                    int iterPerWorker = ntot / p;
+                    long total = 0;
+
+                    long start = System.nanoTime();
+
+                    for (int i = 0; i < p; i++)
+                        writers.get(i).println(iterPerWorker);
+
+                    for (int i = 0; i < p; i++)
+                        total += Long.parseLong(readers.get(i).readLine());
+
+                    long stop = System.nanoTime();
+                    double timeMs = (stop - start) / 1_000_000.0;
+
+                    double pi = 4.0 * total / ntot;
+
+                    out.println(ntot + "," + p + "," + timeMs + "," + pi);
+
+                    System.out.println("Workers=" + p +
+                            " | Iter/worker=" + iterPerWorker +
+                            " | Time(ms)=" + timeMs +
+                            " | Pi ≈ " + pi);
+                }
+            }
+        }
+    }
+
+    private static void runWeakScalingCSV(int[] workers, int iterPerWorker) throws Exception {
+        try (PrintWriter out = new PrintWriter(new FileWriter("socket_weak_scaling.csv"))) {
+            out.println("workers,iter_per_worker,ntot,time_ms,pi");
+
+            System.out.println("\n=== WEAK scaling Iter/worker = " + iterPerWorker + " ===");
+
+            for (int p : workers) {
+                long total = 0;
+                long ntot = (long) iterPerWorker * p;
+
+                long start = System.nanoTime();
+
+                for (int i = 0; i < p; i++)
+                    writers.get(i).println(iterPerWorker);
+
+                for (int i = 0; i < p; i++)
+                    total += Long.parseLong(readers.get(i).readLine());
+
+                long stop = System.nanoTime();
+                double timeMs = (stop - start) / 1_000_000.0;
+
+                double pi = 4.0 * total / ntot;
+
+                out.println(p + "," + iterPerWorker + "," + ntot + "," + timeMs + "," + pi);
+
+                System.out.println("Workers=" + p +
+                        " | Ntot=" + ntot +
+                        " | Time(ms)=" + timeMs +
+                        " | Pi ≈ " + pi);
+            }
         }
     }
 }
